@@ -5,7 +5,7 @@
 | **App Name** | JEI Smart Campus Study Room Booking App |
 | **Student ID** | 2025621055 |
 | **Student Name** | RAI SPANDAN |
-| **GitHub Repository URL** | https://github.com/[YourGitHubUsername]/JEI-Android-Midterm-Project |
+| **GitHub Repository URL** | https://github.com/spey2002-wq/JEI-Android-Midterm-Project |
 | **Date** | 2026-10-26 |
 
 ---
@@ -486,8 +486,8 @@ Fragment  ->  ViewModel  ->  Repository  ->  DAO  ->  AppDatabase (SQLite)
 - [x] Development schedule for Weeks 9–16 prepared
 - [x] AI usage statement included
 - [x] Student ID and student name filled in with real information
-- [ ] Replace `[YourGitHubUsername]` in the GitHub URL with the real username before submitting
-- [ ] Push the proposal and the project code to the GitHub repository
+- [x] GitHub repository URL filled in with the real username
+- [x] Proposal pushed to the GitHub repository (project code will be pushed as it is developed)
 
 ### 8.2 AI Usage Statement
 
