@@ -1,0 +1,708 @@
+==============================================================================
+ JEI SMART CAMPUS STUDY ROOM BOOKING APP
+ Database Schema Notes & Room Entity / DAO Drafts
+==============================================================================
+ Course   : Android Programming - Midterm Project
+ School   : JEI University, Department of Computer Software
+ Author   : RAI SPANDAN (Student ID: 2025621055)
+ Platform : Android (Kotlin) + Room Persistence Library (SQLite)
+==============================================================================
+
+
+------------------------------------------------------------------------------
+ 1. DATABASE OVERVIEW
+------------------------------------------------------------------------------
+
+ Database Name : campus_booking_database
+ Engine        : SQLite (accessed through Android Room)
+ Version       : 1
+ Tables        : 3  (users, study_rooms, reservations)
+
+ Purpose:
+   Lets JEI University students book study rooms on campus. A user can make
+   many reservations, and a study room can be reserved many times (at
+   different times). "reservations" is the junction table that links
+   users <-> study_rooms (a many-to-many relationship expressed as two
+   one-to-many relationships).
+
+ Entity Relationship (text diagram):
+
+     +-----------+ 1        N +------------------+ N        1 +--------------+
+     |   users   |------------|   reservations   |------------| study_rooms  |
+     +-----------+            +------------------+            +--------------+
+     | user_id PK|            | reservation_id PK|            | room_id PK   |
+     | ...       |            | user_id FK       |            | ...          |
+     +-----------+            | room_id FK       |            +--------------+
+                              +------------------+
+
+ Legend for constraints used below:
+   PK       = Primary Key
+   FK       = Foreign Key
+   AUTO     = AUTOINCREMENT (value generated automatically)
+   NOT NULL = value is required
+   UNIQUE   = no two rows may share this value
+
+ SQLite data types used: INTEGER, TEXT
+   - Dates are stored as TEXT in ISO format  : "yyyy-MM-dd"   (2026-10-28)
+   - Times are stored as TEXT in 24h format  : "HH:mm"         (14:00)
+   - Timestamps are stored as TEXT           : "yyyy-MM-dd HH:mm:ss"
+   - Booleans are stored as INTEGER          : 0 = false, 1 = true
+
+
+------------------------------------------------------------------------------
+ 2. TABLE SCHEMAS
+------------------------------------------------------------------------------
+
+
+ ============================================================
+ TABLE 1: users
+ ============================================================
+ Stores students / staff who can log in and book rooms.
+
+ +----------------+-----------+-------------------------+------------------------------------------+
+ | Column Name    | Data Type | Key Constraints         | Description                              |
+ +----------------+-----------+-------------------------+------------------------------------------+
+ | user_id        | INTEGER   | PK, AUTO, NOT NULL      | Unique internal ID of the user           |
+ | student_number | TEXT      | NOT NULL, UNIQUE        | University student/staff ID number       |
+ | full_name      | TEXT      | NOT NULL                | Full name of the user                    |
+ | email          | TEXT      | NOT NULL, UNIQUE        | University email address (login ID)     |
+ | password_hash  | TEXT      | NOT NULL                | Hashed password (never store plain text) |
+ | department     | TEXT      | NOT NULL                | Department/major of the user             |
+ | role           | TEXT      | NOT NULL                | "STUDENT" or "ADMIN"                     |
+ | created_at     | TEXT      | NOT NULL                | Account creation timestamp               |
+ +----------------+-----------+-------------------------+------------------------------------------+
+
+ SQL (for reference):
+
+   CREATE TABLE users (
+       user_id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+       student_number TEXT    NOT NULL UNIQUE,
+       full_name      TEXT    NOT NULL,
+       email          TEXT    NOT NULL UNIQUE,
+       password_hash  TEXT    NOT NULL,
+       department     TEXT    NOT NULL,
+       role           TEXT    NOT NULL DEFAULT 'STUDENT',
+       created_at     TEXT    NOT NULL
+   );
+
+ Example Records:
+
+ +---------+----------------+---------------+------------------+---------------+-------------------+---------+---------------------+
+ | user_id | student_number | full_name     | email            | password_hash | department        | role    | created_at          |
+ +---------+----------------+---------------+------------------+---------------+-------------------+---------+---------------------+
+ | 1       | 20231001       | Kim Minjun    | minjun@jei.ac.kr | a1b2c3...     | Computer Software | STUDENT | 2026-03-02 09:15:00 |
+ | 2       | 20231045       | Lee Soyeon    | soyeon@jei.ac.kr | d4e5f6...     | Computer Software | STUDENT | 2026-03-02 10:40:12 |
+ | 3       | 20220318       | Park Jihoon   | jihoon@jei.ac.kr | 9f8e7d...     | Business Admin    | STUDENT | 2026-03-05 13:22:45 |
+ | 4       | 99000001       | Admin Library | admin@jei.ac.kr  | 5c4b3a...     | Library Office    | ADMIN   | 2026-01-10 08:00:00 |
+ +---------+----------------+---------------+------------------+---------------+-------------------+---------+---------------------+
+
+
+ ============================================================
+ TABLE 2: study_rooms
+ ============================================================
+ Stores every bookable study room on campus.
+
+ +----------------+-----------+-------------------------+------------------------------------------+
+ | Column Name    | Data Type | Key Constraints         | Description                              |
+ +----------------+-----------+-------------------------+------------------------------------------+
+ | room_id        | INTEGER   | PK, AUTO, NOT NULL      | Unique ID of the study room              |
+ | room_name      | TEXT      | NOT NULL, UNIQUE        | Display name, e.g. "Study Room A-101"    |
+ | building       | TEXT      | NOT NULL                | Building where the room is located       |
+ | floor          | INTEGER   | NOT NULL                | Floor number of the room                 |
+ | capacity       | INTEGER   | NOT NULL                | Maximum number of people                 |
+ | equipment      | TEXT      | NOT NULL                | Comma-separated facilities (Projector..) |
+ | is_available   | INTEGER   | NOT NULL                | 1 = open for booking, 0 = closed         |
+ +----------------+-----------+-------------------------+------------------------------------------+
+
+ SQL (for reference):
+
+   CREATE TABLE study_rooms (
+       room_id      INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+       room_name    TEXT    NOT NULL UNIQUE,
+       building     TEXT    NOT NULL,
+       floor        INTEGER NOT NULL,
+       capacity     INTEGER NOT NULL,
+       equipment    TEXT    NOT NULL DEFAULT '',
+       is_available INTEGER NOT NULL DEFAULT 1
+   );
+
+ Example Records:
+
+ +---------+------------------+------------------+-------+----------+----------------------------+--------------+
+ | room_id | room_name        | building         | floor | capacity | equipment                  | is_available |
+ +---------+------------------+------------------+-------+----------+----------------------------+--------------+
+ | 1       | Study Room A-101 | Main Library     | 1     | 4        | Whiteboard,Power Outlet    | 1            |
+ | 2       | Study Room A-202 | Main Library     | 2     | 8        | Projector,Whiteboard,Wi-Fi | 1            |
+ | 3       | Group Lab B-305  | Engineering Hall | 3     | 12       | Monitor,Whiteboard,Wi-Fi   | 1            |
+ | 4       | Quiet Room C-001 | Student Center   | 0     | 2        | Power Outlet               | 0            |
+ +---------+------------------+------------------+-------+----------+----------------------------+--------------+
+
+
+ ============================================================
+ TABLE 3: reservations
+ ============================================================
+ Stores each booking made by a user for a specific study room and time slot.
+ This table holds two foreign keys.
+
+ +------------------+-----------+----------------------------+------------------------------------------+
+ | Column Name      | Data Type | Key Constraints            | Description                              |
+ +------------------+-----------+----------------------------+------------------------------------------+
+ | reservation_id   | INTEGER   | PK, AUTO, NOT NULL         | Unique ID of the reservation             |
+ | user_id          | INTEGER   | FK -> users.user_id,       | The user who made the booking            |
+ |                  |           | NOT NULL                   |                                          |
+ | room_id          | INTEGER   | FK -> study_rooms.room_id, | The room being booked                    |
+ |                  |           | NOT NULL                   |                                          |
+ | reservation_date | TEXT      | NOT NULL                   | Date of use (yyyy-MM-dd)                 |
+ | start_time       | TEXT      | NOT NULL                   | Start time (HH:mm)                       |
+ | end_time         | TEXT      | NOT NULL                   | End time (HH:mm)                         |
+ | purpose          | TEXT      | NOT NULL                   | Reason: "Group Study", "Presentation"..  |
+ | status           | TEXT      | NOT NULL                   | "CONFIRMED", "CANCELLED", "COMPLETED"    |
+ | created_at       | TEXT      | NOT NULL                   | When the booking was made                |
+ +------------------+-----------+----------------------------+------------------------------------------+
+
+ Foreign key rules:
+   - user_id -> users(user_id)        ON DELETE CASCADE
+       (deleting a user also deletes that user's reservations)
+   - room_id -> study_rooms(room_id)  ON DELETE CASCADE
+       (deleting a room also deletes reservations for that room)
+
+ SQL (for reference):
+
+   CREATE TABLE reservations (
+       reservation_id   INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+       user_id          INTEGER NOT NULL,
+       room_id          INTEGER NOT NULL,
+       reservation_date TEXT    NOT NULL,
+       start_time       TEXT    NOT NULL,
+       end_time         TEXT    NOT NULL,
+       purpose          TEXT    NOT NULL,
+       status           TEXT    NOT NULL DEFAULT 'CONFIRMED',
+       created_at       TEXT    NOT NULL,
+       FOREIGN KEY (user_id) REFERENCES users(user_id)
+           ON DELETE CASCADE,
+       FOREIGN KEY (room_id) REFERENCES study_rooms(room_id)
+           ON DELETE CASCADE
+   );
+   CREATE INDEX index_reservations_user_id ON reservations(user_id);
+   CREATE INDEX index_reservations_room_id ON reservations(room_id);
+
+ Example Records (columns abbreviated: user = user_id, room = room_id,
+ date = reservation_date, start = start_time, end = end_time):
+
+ +----+------+------+------------+-------+-------+--------------+-----------+---------------------+
+ | id | user | room | date       | start | end   | purpose      | status    | created_at          |
+ +----+------+------+------------+-------+-------+--------------+-----------+---------------------+
+ | 1  | 1    | 2    | 2026-10-28 | 14:00 | 16:00 | Group Study  | CONFIRMED | 2026-10-26 09:30:00 |
+ | 2  | 2    | 1    | 2026-10-28 | 10:00 | 12:00 | Midterm Prep | CONFIRMED | 2026-10-26 10:05:21 |
+ | 3  | 3    | 3    | 2026-10-27 | 13:00 | 15:00 | Presentation | CANCELLED | 2026-10-25 17:48:09 |
+ | 4  | 1    | 1    | 2026-10-20 | 09:00 | 11:00 | Self Study   | COMPLETED | 2026-10-19 20:12:33 |
+ +----+------+------+------------+-------+-------+--------------+-----------+---------------------+
+
+
+------------------------------------------------------------------------------
+ 3. KOTLIN ROOM DRAFT CODE
+------------------------------------------------------------------------------
+
+ Gradle dependencies (app/build.gradle.kts) - versions may be adjusted:
+
+   plugins {
+       id("com.android.application")
+       id("org.jetbrains.kotlin.android")
+       id("com.google.devtools.ksp")          // use KSP (or kapt) for Room
+   }
+
+   dependencies {
+       val roomVersion = "2.6.1"
+       implementation("androidx.room:room-runtime:$roomVersion")
+       implementation("androidx.room:room-ktx:$roomVersion")   // coroutines + Flow
+       ksp("androidx.room:room-compiler:$roomVersion")
+   }
+
+
+ ============================================================
+ 3.1 ENTITIES
+ ============================================================
+
+ ---- File: data/entity/User.kt ----------------------------------------
+
+   package com.jei.campusbooking.data.entity
+
+   import androidx.room.ColumnInfo
+   import androidx.room.Entity
+   import androidx.room.Index
+   import androidx.room.PrimaryKey
+
+   @Entity(
+       tableName = "users",
+       indices = [
+           Index(value = ["student_number"], unique = true),
+           Index(value = ["email"], unique = true)
+       ]
+   )
+   data class User(
+       @PrimaryKey(autoGenerate = true)
+       @ColumnInfo(name = "user_id")
+       val userId: Int = 0,
+
+       @ColumnInfo(name = "student_number")
+       val studentNumber: String,
+
+       @ColumnInfo(name = "full_name")
+       val fullName: String,
+
+       @ColumnInfo(name = "email")
+       val email: String,
+
+       @ColumnInfo(name = "password_hash")
+       val passwordHash: String,
+
+       @ColumnInfo(name = "department")
+       val department: String,
+
+       @ColumnInfo(name = "role", defaultValue = "STUDENT")
+       val role: String = "STUDENT",
+
+       @ColumnInfo(name = "created_at")
+       val createdAt: String
+   )
+
+
+ ---- File: data/entity/StudyRoom.kt -----------------------------------
+
+   package com.jei.campusbooking.data.entity
+
+   import androidx.room.ColumnInfo
+   import androidx.room.Entity
+   import androidx.room.Index
+   import androidx.room.PrimaryKey
+
+   @Entity(
+       tableName = "study_rooms",
+       indices = [Index(value = ["room_name"], unique = true)]
+   )
+   data class StudyRoom(
+       @PrimaryKey(autoGenerate = true)
+       @ColumnInfo(name = "room_id")
+       val roomId: Int = 0,
+
+       @ColumnInfo(name = "room_name")
+       val roomName: String,
+
+       @ColumnInfo(name = "building")
+       val building: String,
+
+       @ColumnInfo(name = "floor")
+       val floor: Int,
+
+       @ColumnInfo(name = "capacity")
+       val capacity: Int,
+
+       @ColumnInfo(name = "equipment", defaultValue = "")
+       val equipment: String = "",
+
+       // Room stores Boolean as INTEGER (true = 1, false = 0)
+       @ColumnInfo(name = "is_available", defaultValue = "1")
+       val isAvailable: Boolean = true
+   )
+
+
+ ---- File: data/entity/Reservation.kt ---------------------------------
+
+   package com.jei.campusbooking.data.entity
+
+   import androidx.room.ColumnInfo
+   import androidx.room.Entity
+   import androidx.room.ForeignKey
+   import androidx.room.Index
+   import androidx.room.PrimaryKey
+
+   @Entity(
+       tableName = "reservations",
+       foreignKeys = [
+           ForeignKey(
+               entity = User::class,
+               parentColumns = ["user_id"],
+               childColumns = ["user_id"],
+               onDelete = ForeignKey.CASCADE
+           ),
+           ForeignKey(
+               entity = StudyRoom::class,
+               parentColumns = ["room_id"],
+               childColumns = ["room_id"],
+               onDelete = ForeignKey.CASCADE
+           )
+       ],
+       indices = [
+           Index(value = ["user_id"]),
+           Index(value = ["room_id"])
+       ]
+   )
+   data class Reservation(
+       @PrimaryKey(autoGenerate = true)
+       @ColumnInfo(name = "reservation_id")
+       val reservationId: Int = 0,
+
+       @ColumnInfo(name = "user_id")
+       val userId: Int,
+
+       @ColumnInfo(name = "room_id")
+       val roomId: Int,
+
+       @ColumnInfo(name = "reservation_date")
+       val reservationDate: String,      // "yyyy-MM-dd"
+
+       @ColumnInfo(name = "start_time")
+       val startTime: String,            // "HH:mm"
+
+       @ColumnInfo(name = "end_time")
+       val endTime: String,              // "HH:mm"
+
+       @ColumnInfo(name = "purpose")
+       val purpose: String,
+
+       @ColumnInfo(name = "status", defaultValue = "CONFIRMED")
+       val status: String = "CONFIRMED", // CONFIRMED / CANCELLED / COMPLETED
+
+       @ColumnInfo(name = "created_at")
+       val createdAt: String
+   )
+
+
+ ---- File: data/entity/ReservationDetail.kt (optional helper) ---------
+ A plain data class used to show a reservation together with the room name
+ and user name (result of a JOIN query - NOT a table, no @Entity).
+
+   package com.jei.campusbooking.data.entity
+
+   import androidx.room.ColumnInfo
+
+   data class ReservationDetail(
+       @ColumnInfo(name = "reservation_id")   val reservationId: Int,
+       @ColumnInfo(name = "room_name")        val roomName: String,
+       @ColumnInfo(name = "building")         val building: String,
+       @ColumnInfo(name = "full_name")        val fullName: String,
+       @ColumnInfo(name = "reservation_date") val reservationDate: String,
+       @ColumnInfo(name = "start_time")       val startTime: String,
+       @ColumnInfo(name = "end_time")         val endTime: String,
+       @ColumnInfo(name = "purpose")          val purpose: String,
+       @ColumnInfo(name = "status")           val status: String
+   )
+
+
+ ============================================================
+ 3.2 DAO INTERFACES
+ ============================================================
+
+ ---- File: data/dao/UserDao.kt ----------------------------------------
+
+   package com.jei.campusbooking.data.dao
+
+   import androidx.room.Dao
+   import androidx.room.Delete
+   import androidx.room.Insert
+   import androidx.room.OnConflictStrategy
+   import androidx.room.Query
+   import androidx.room.Update
+   import com.jei.campusbooking.data.entity.User
+   import kotlinx.coroutines.flow.Flow
+
+   @Dao
+   interface UserDao {
+
+       // INSERT - returns the new auto-generated user_id
+       // (throws SQLiteConstraintException on duplicate email/student number)
+       @Insert(onConflict = OnConflictStrategy.ABORT)
+       suspend fun insertUser(user: User): Long
+
+       // UPDATE - returns number of rows updated
+       @Update
+       suspend fun updateUser(user: User): Int
+
+       @Delete
+       suspend fun deleteUser(user: User): Int
+
+       // LOGIN - find a user by email (compare password hash in code)
+       @Query("SELECT * FROM users WHERE email = :email LIMIT 1")
+       suspend fun getUserByEmail(email: String): User?
+
+       @Query("SELECT * FROM users WHERE user_id = :userId")
+       suspend fun getUserById(userId: Int): User?
+
+       @Query("SELECT * FROM users WHERE student_number = :studentNumber LIMIT 1")
+       suspend fun getUserByStudentNumber(studentNumber: String): User?
+
+       // Check duplicate email during sign-up (returns 1 if exists)
+       @Query("SELECT COUNT(*) FROM users WHERE email = :email")
+       suspend fun countByEmail(email: String): Int
+
+       @Query("SELECT * FROM users ORDER BY full_name ASC")
+       fun getAllUsers(): Flow<List<User>>
+
+       @Query("UPDATE users SET password_hash = :newHash WHERE user_id = :userId")
+       suspend fun updatePassword(userId: Int, newHash: String): Int
+   }
+
+
+ ---- File: data/dao/StudyRoomDao.kt -----------------------------------
+
+   package com.jei.campusbooking.data.dao
+
+   import androidx.room.Dao
+   import androidx.room.Delete
+   import androidx.room.Insert
+   import androidx.room.OnConflictStrategy
+   import androidx.room.Query
+   import androidx.room.Update
+   import com.jei.campusbooking.data.entity.StudyRoom
+   import kotlinx.coroutines.flow.Flow
+
+   @Dao
+   interface StudyRoomDao {
+
+       @Insert(onConflict = OnConflictStrategy.ABORT)
+       suspend fun insertRoom(room: StudyRoom): Long
+
+       // Useful for pre-loading sample rooms on first launch
+       @Insert(onConflict = OnConflictStrategy.IGNORE)
+       suspend fun insertRooms(rooms: List<StudyRoom>): List<Long>
+
+       @Update
+       suspend fun updateRoom(room: StudyRoom): Int
+
+       @Delete
+       suspend fun deleteRoom(room: StudyRoom): Int
+
+       @Query("SELECT * FROM study_rooms ORDER BY building ASC, room_name ASC")
+       fun getAllRooms(): Flow<List<StudyRoom>>
+
+       @Query("SELECT * FROM study_rooms WHERE is_available = 1 ORDER BY room_name ASC")
+       fun getAvailableRooms(): Flow<List<StudyRoom>>
+
+       @Query("SELECT * FROM study_rooms WHERE room_id = :roomId")
+       suspend fun getRoomById(roomId: Int): StudyRoom?
+
+       @Query("SELECT * FROM study_rooms WHERE building = :building AND is_available = 1")
+       fun getRoomsByBuilding(building: String): Flow<List<StudyRoom>>
+
+       // Find rooms that can hold at least N people
+       @Query("SELECT * FROM study_rooms WHERE capacity >= :minCapacity AND is_available = 1 ORDER BY capacity ASC")
+       fun getRoomsByMinCapacity(minCapacity: Int): Flow<List<StudyRoom>>
+
+       // Search by name/building (pass "%keyword%" when calling)
+       @Query("SELECT * FROM study_rooms WHERE room_name LIKE :keyword OR building LIKE :keyword")
+       fun searchRooms(keyword: String): Flow<List<StudyRoom>>
+
+       // Open / close a room (admin feature)
+       @Query("UPDATE study_rooms SET is_available = :available WHERE room_id = :roomId")
+       suspend fun setRoomAvailability(roomId: Int, available: Boolean): Int
+   }
+
+
+ ---- File: data/dao/ReservationDao.kt ---------------------------------
+
+   package com.jei.campusbooking.data.dao
+
+   import androidx.room.Dao
+   import androidx.room.Delete
+   import androidx.room.Insert
+   import androidx.room.OnConflictStrategy
+   import androidx.room.Query
+   import androidx.room.Update
+   import com.jei.campusbooking.data.entity.Reservation
+   import com.jei.campusbooking.data.entity.ReservationDetail
+   import kotlinx.coroutines.flow.Flow
+
+   @Dao
+   interface ReservationDao {
+
+       @Insert(onConflict = OnConflictStrategy.ABORT)
+       suspend fun insertReservation(reservation: Reservation): Long
+
+       @Update
+       suspend fun updateReservation(reservation: Reservation): Int
+
+       @Delete
+       suspend fun deleteReservation(reservation: Reservation): Int
+
+       @Query("SELECT * FROM reservations WHERE reservation_id = :id")
+       suspend fun getReservationById(id: Int): Reservation?
+
+       // "My Reservations" screen - newest date first
+       @Query("""
+           SELECT * FROM reservations
+           WHERE user_id = :userId
+           ORDER BY reservation_date DESC, start_time DESC
+       """)
+       fun getReservationsByUser(userId: Int): Flow<List<Reservation>>
+
+       // Same list but joined with room & user info for display
+       @Query("""
+           SELECT r.reservation_id, s.room_name, s.building, u.full_name,
+                  r.reservation_date, r.start_time, r.end_time,
+                  r.purpose, r.status
+           FROM reservations r
+           INNER JOIN study_rooms s ON r.room_id = s.room_id
+           INNER JOIN users u       ON r.user_id = u.user_id
+           WHERE r.user_id = :userId
+           ORDER BY r.reservation_date DESC, r.start_time DESC
+       """)
+       fun getReservationDetailsByUser(userId: Int): Flow<List<ReservationDetail>>
+
+       // Timetable of one room on one day (for the availability screen)
+       @Query("""
+           SELECT * FROM reservations
+           WHERE room_id = :roomId
+             AND reservation_date = :date
+             AND status = 'CONFIRMED'
+           ORDER BY start_time ASC
+       """)
+       fun getReservationsByRoomAndDate(roomId: Int, date: String): Flow<List<Reservation>>
+
+       // Conflict check BEFORE inserting. Returns the number of overlapping
+       // confirmed bookings (0 = the time slot is free).
+       // Two slots overlap when: newStart < existingEnd AND newEnd > existingStart
+       @Query("""
+           SELECT COUNT(*) FROM reservations
+           WHERE room_id = :roomId
+             AND reservation_date = :date
+             AND status = 'CONFIRMED'
+             AND :startTime < end_time
+             AND :endTime   > start_time
+       """)
+       suspend fun countConflicts(
+           roomId: Int,
+           date: String,
+           startTime: String,
+           endTime: String
+       ): Int
+
+       // Cancel a booking (soft delete - keeps the history)
+       @Query("UPDATE reservations SET status = 'CANCELLED' WHERE reservation_id = :id")
+       suspend fun cancelReservation(id: Int): Int
+
+       @Query("UPDATE reservations SET status = :status WHERE reservation_id = :id")
+       suspend fun updateStatus(id: Int, status: String): Int
+
+       // Upcoming confirmed bookings of a user (from a given date onward)
+       @Query("""
+           SELECT * FROM reservations
+           WHERE user_id = :userId
+             AND status = 'CONFIRMED'
+             AND reservation_date >= :today
+           ORDER BY reservation_date ASC, start_time ASC
+       """)
+       fun getUpcomingReservations(userId: Int, today: String): Flow<List<Reservation>>
+
+       // Admin: all reservations
+       @Query("SELECT * FROM reservations ORDER BY reservation_date DESC, start_time DESC")
+       fun getAllReservations(): Flow<List<Reservation>>
+   }
+
+
+ ============================================================
+ 3.3 DATABASE CLASS
+ ============================================================
+
+ ---- File: data/AppDatabase.kt ----------------------------------------
+
+   package com.jei.campusbooking.data
+
+   import android.content.Context
+   import androidx.room.Database
+   import androidx.room.Room
+   import androidx.room.RoomDatabase
+   import com.jei.campusbooking.data.dao.ReservationDao
+   import com.jei.campusbooking.data.dao.StudyRoomDao
+   import com.jei.campusbooking.data.dao.UserDao
+   import com.jei.campusbooking.data.entity.Reservation
+   import com.jei.campusbooking.data.entity.StudyRoom
+   import com.jei.campusbooking.data.entity.User
+
+   @Database(
+       entities = [User::class, StudyRoom::class, Reservation::class],
+       version = 1,
+       exportSchema = true
+   )
+   abstract class AppDatabase : RoomDatabase() {
+
+       abstract fun userDao(): UserDao
+       abstract fun studyRoomDao(): StudyRoomDao
+       abstract fun reservationDao(): ReservationDao
+
+       companion object {
+           const val DATABASE_NAME = "campus_booking_database"
+
+           @Volatile
+           private var INSTANCE: AppDatabase? = null
+
+           fun getDatabase(context: Context): AppDatabase {
+               return INSTANCE ?: synchronized(this) {
+                   val instance = Room.databaseBuilder(
+                       context.applicationContext,
+                       AppDatabase::class.java,
+                       DATABASE_NAME
+                   )
+                       .fallbackToDestructiveMigration() // OK for midterm; use Migrations in production
+                       .build()
+                   INSTANCE = instance
+                   instance
+               }
+           }
+       }
+   }
+
+
+------------------------------------------------------------------------------
+ 4. USAGE EXAMPLE (ViewModel / Repository side)
+------------------------------------------------------------------------------
+
+   // Get the database
+   val db = AppDatabase.getDatabase(applicationContext)
+
+   // Book a room (call inside a coroutine, e.g. viewModelScope.launch { ... })
+   suspend fun bookRoom(userId: Int, roomId: Int,
+                        date: String, start: String, end: String,
+                        purpose: String): Boolean {
+
+       val conflicts = db.reservationDao()
+           .countConflicts(roomId, date, start, end)
+
+       if (conflicts > 0) return false          // time slot already taken
+
+       db.reservationDao().insertReservation(
+           Reservation(
+               userId = userId,
+               roomId = roomId,
+               reservationDate = date,
+               startTime = start,
+               endTime = end,
+               purpose = purpose,
+               createdAt = "2026-10-26 11:53:00"   // replace with real current time
+           )
+       )
+       return true
+   }
+
+
+------------------------------------------------------------------------------
+ 5. IMPLEMENTATION NOTES / TO-DO
+------------------------------------------------------------------------------
+
+ [ ] Replace package name "com.jei.campusbooking" with the real project package.
+ [ ] Hash passwords (e.g. SHA-256 with salt) BEFORE saving to password_hash.
+ [ ] Foreign keys require the parent row to exist - always insert users and
+     study_rooms BEFORE reservations.
+ [ ] Use java.time.LocalDate / LocalTime to produce the TEXT date/time values
+     (DateTimeFormatter.ISO_LOCAL_DATE and "HH:mm").
+ [ ] Room DAO calls with "suspend" or "Flow" must not run on the main thread -
+     call them from viewModelScope / lifecycleScope.
+ [ ] Pre-populate study_rooms with sample data using RoomDatabase.Callback
+     or the insertRooms() DAO method.
+ [ ] Optional improvement: use an Enum + @TypeConverter for role and status
+     instead of raw TEXT strings.
+ [ ] Optional improvement: wrap "countConflicts + insertReservation" in a
+     @Transaction method to avoid race-condition double booking.
+
+==============================================================================
+ END OF schema_notes.txt
+==============================================================================
